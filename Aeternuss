@@ -1,0 +1,722 @@
+local Players = game:GetService("Players")
+local StarterGui = game:GetService("StarterGui")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+
+-- Variables para el ataque
+local SelectedPlayers = {}
+local AttackRunning = false
+local AttackThread = nil
+local MaxPlayers = 30
+local isCooldown = false
+local isLooping = false
+
+-- Sistema de ataque
+local function attackTarget(targetPlayer)
+    if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("Humanoid") then
+        local Target = targetPlayer.Character.Humanoid
+        local tool = LocalPlayer.Backpack:FindFirstChild("Kawaii Revolver") 
+        local damageRemote = tool and tool:FindFirstChild("DamageRemote")
+
+        if damageRemote then
+            repeat
+                if Target and Target.Health > 0 and not isCooldown then
+                    isCooldown = true
+
+                    tool.Parent = Character
+                    damageRemote:FireServer(Target)
+                    tool.Parent = LocalPlayer.Backpack
+
+                    task.wait(0.4)
+                    isCooldown = false
+                end
+                task.wait()
+            until not Target or Target.Health <= 0 or not AttackRunning
+
+            return true
+        else
+            StarterGui:SetCore("SendNotification", {
+                Title = "ERROR",
+                Text = "Arma no encontrada",
+                Duration = 3
+            })
+            return false
+        end
+    else
+        StarterGui:SetCore("SendNotification", {
+            Title = "JUGADOR NO ENCONTRADO",
+            Text = targetPlayer.Name .. " no está disponible.",
+            Duration = 3
+        })
+        return false
+    end
+end
+
+-- GUI
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "MexicoSimulatorGUI"
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+ScreenGui.ResetOnSpawn = false
+
+-- Botón principal
+local SquareButton = Instance.new("TextButton")
+SquareButton.Size = UDim2.new(0, 50, 0, 50)
+SquareButton.Position = UDim2.new(0, 20, 0, 20)
+SquareButton.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+SquareButton.BorderSizePixel = 2
+SquareButton.BorderColor3 = Color3.fromRGB(60, 60, 70)
+SquareButton.Text = "≡"
+SquareButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+SquareButton.Font = Enum.Font.GothamBold
+SquareButton.TextSize = 24
+SquareButton.Parent = ScreenGui
+
+-- LED con efecto
+local ButtonLED = Instance.new("UIStroke")
+ButtonLED.Thickness = 3
+ButtonLED.Color = Color3.fromRGB(0, 150, 255)
+ButtonLED.Transparency = 0.2
+ButtonLED.Parent = SquareButton
+
+-- Animación de parpadeo LED
+local function animateLED()
+    while ButtonLED and ButtonLED.Parent do
+        TweenService:Create(ButtonLED, TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Transparency = 0.1}):Play()
+        wait(0.8)
+        TweenService:Create(ButtonLED, TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Transparency = 0.4}):Play()
+        wait(0.8)
+    end
+end
+spawn(animateLED)
+
+-- Panel principal (inicialmente oculto)
+local MainPanel = Instance.new("Frame")
+MainPanel.Size = UDim2.new(0, 350, 0, 520)
+MainPanel.Position = UDim2.new(0, 80, 0, 20)
+MainPanel.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+MainPanel.BackgroundTransparency = 0.1
+MainPanel.BorderSizePixel = 2
+MainPanel.BorderColor3 = Color3.fromRGB(50, 50, 60)
+MainPanel.Visible = false
+MainPanel.Parent = ScreenGui
+
+-- Borde LED del panel
+local PanelLED = Instance.new("UIStroke")
+PanelLED.Thickness = 3
+PanelLED.Color = Color3.fromRGB(0, 150, 255)
+PanelLED.Transparency = 0.1
+PanelLED.Parent = MainPanel
+
+-- Decoración
+local Decoration = Instance.new("ImageLabel")
+Decoration.Size = UDim2.new(0, 40, 0, 40)
+Decoration.Position = UDim2.new(0, 10, 0, 5)
+Decoration.Image = "rbxassetid://4456176229"
+Decoration.BackgroundTransparency = 1
+Decoration.ImageColor3 = Color3.fromRGB(0, 150, 255)
+Decoration.Parent = MainPanel
+
+-- Cabecera del panel
+local Header = Instance.new("Frame")
+Header.Size = UDim2.new(1, 0, 0, 45)
+Header.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+Header.BorderSizePixel = 0
+Header.Parent = MainPanel
+
+local HeaderTitle = Instance.new("TextLabel")
+HeaderTitle.Size = UDim2.new(1, -40, 1, 0)
+HeaderTitle.Position = UDim2.new(0, 50, 0, 0)
+HeaderTitle.BackgroundTransparency = 1
+HeaderTitle.Text = "MEXICO SIMULATOR"
+HeaderTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+HeaderTitle.Font = Enum.Font.GothamBold
+HeaderTitle.TextSize = 18
+HeaderTitle.TextXAlignment = Enum.TextXAlignment.Left
+HeaderTitle.Parent = Header
+
+-- Botón para cerrar en el panel
+local CloseButton = Instance.new("TextButton")
+CloseButton.Size = UDim2.new(0, 35, 0, 35)
+CloseButton.Position = UDim2.new(1, -40, 0.5, -17.5)
+CloseButton.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+CloseButton.BorderSizePixel = 0
+CloseButton.Text = "X"
+CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseButton.Font = Enum.Font.GothamBold
+CloseButton.TextSize = 16
+CloseButton.Parent = Header
+
+-- Contador de objetivos
+local TargetCount = Instance.new("TextLabel")
+TargetCount.Size = UDim2.new(1, -20, 0, 35)
+TargetCount.Position = UDim2.new(0, 10, 0, 50)
+TargetCount.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+TargetCount.BorderSizePixel = 0
+TargetCount.TextColor3 = Color3.fromRGB(0, 150, 255)
+TargetCount.Font = Enum.Font.GothamBold
+TargetCount.TextSize = 16
+TargetCount.Text = "Objetivos: 0/30"
+TargetCount.TextXAlignment = Enum.TextXAlignment.Center
+TargetCount.Parent = MainPanel
+
+-- Frame para botones de utilidad
+local UtilityButtonsFrame = Instance.new("Frame")
+UtilityButtonsFrame.Size = UDim2.new(1, -20, 0, 45)
+UtilityButtonsFrame.Position = UDim2.new(0, 10, 0, 90)
+UtilityButtonsFrame.BackgroundTransparency = 1
+UtilityButtonsFrame.Parent = MainPanel
+
+-- Botón "Todos" (Seleccionar todos)
+local AllButton = Instance.new("TextButton")
+AllButton.Size = UDim2.new(0.48, 0, 1, 0)
+AllButton.Position = UDim2.new(0, 0, 0, 0)
+AllButton.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+AllButton.BorderSizePixel = 0
+AllButton.Text = "TODOS"
+AllButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+AllButton.Font = Enum.Font.GothamBold
+AllButton.TextSize = 14
+AllButton.Parent = UtilityButtonsFrame
+
+-- Botón "Limpiar"
+local ClearButton = Instance.new("TextButton")
+ClearButton.Size = UDim2.new(0.48, 0, 1, 0)
+ClearButton.Position = UDim2.new(0.52, 0, 0, 0)
+ClearButton.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+ClearButton.BorderSizePixel = 0
+ClearButton.Text = "LIMPIAR"
+ClearButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ClearButton.Font = Enum.Font.GothamBold
+ClearButton.TextSize = 14
+ClearButton.Parent = UtilityButtonsFrame
+
+-- Frame para botones de control
+local ControlButtonsFrame = Instance.new("Frame")
+ControlButtonsFrame.Size = UDim2.new(1, -20, 0, 45)
+ControlButtonsFrame.Position = UDim2.new(0, 10, 0, 140)
+ControlButtonsFrame.BackgroundTransparency = 1
+ControlButtonsFrame.Parent = MainPanel
+
+-- Botón "Iniciar"
+local StartButton = Instance.new("TextButton")
+StartButton.Size = UDim2.new(0.48, 0, 1, 0)
+StartButton.Position = UDim2.new(0, 0, 0, 0)
+StartButton.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+StartButton.BorderSizePixel = 0
+StartButton.Text = "ATACAR"
+StartButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+StartButton.Font = Enum.Font.GothamBold
+StartButton.TextSize = 14
+StartButton.Parent = ControlButtonsFrame
+
+-- Botón "Parar"
+local StopButton = Instance.new("TextButton")
+StopButton.Size = UDim2.new(0.48, 0, 1, 0)
+StopButton.Position = UDim2.new(0.52, 0, 0, 0)
+StopButton.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+StopButton.BorderSizePixel = 0
+StopButton.Text = "PARAR"
+StopButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+StopButton.Font = Enum.Font.GothamBold
+StopButton.TextSize = 14
+StopButton.Parent = ControlButtonsFrame
+
+-- Botón de Loop
+local LoopButton = Instance.new("TextButton")
+LoopButton.Size = UDim2.new(1, -20, 0, 40)
+LoopButton.Position = UDim2.new(0, 10, 0, 190)
+LoopButton.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+LoopButton.BorderSizePixel = 0
+LoopButton.Text = "LOOP: OFF"
+LoopButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+LoopButton.Font = Enum.Font.GothamBold
+LoopButton.TextSize = 14
+LoopButton.Parent = MainPanel
+
+-- Status label
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Size = UDim2.new(1, -20, 0, 25)
+StatusLabel.Position = UDim2.new(0, 10, 0, 235)
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.TextColor3 = Color3.fromRGB(0, 150, 255)
+StatusLabel.Font = Enum.Font.GothamSemibold
+StatusLabel.TextSize = 13
+StatusLabel.Text = "Estado: Esperando..."
+StatusLabel.TextXAlignment = Enum.TextXAlignment.Center
+StatusLabel.Parent = MainPanel
+
+-- Lista de jugadores
+local PlayerList = Instance.new("ScrollingFrame")
+PlayerList.Size = UDim2.new(1, -20, 1, -270)
+PlayerList.Position = UDim2.new(0, 10, 0, 265)
+PlayerList.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+PlayerList.BackgroundTransparency = 0.2
+PlayerList.BorderSizePixel = 0
+PlayerList.ScrollBarThickness = 8
+PlayerList.ScrollBarImageColor3 = Color3.fromRGB(0, 150, 255)
+PlayerList.Parent = MainPanel
+
+local UIListLayout = Instance.new("UIListLayout", PlayerList)
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Padding = UDim.new(0, 5)
+
+-- Función para abrir/cerrar el panel
+local isPanelOpen = false
+
+SquareButton.MouseButton1Click:Connect(function()
+    if isPanelOpen then
+        MainPanel.Visible = false
+        SquareButton.Text = "≡"
+        isPanelOpen = false
+    else
+        MainPanel.Visible = true
+        SquareButton.Text = "X"
+        isPanelOpen = true
+        UpdatePlayerList()
+    end
+end)
+
+CloseButton.MouseButton1Click:Connect(function()
+    MainPanel.Visible = false
+    SquareButton.Text = "≡"
+    isPanelOpen = false
+end)
+
+-- MOVIMIENTO IGUAL AL DEL SCRIPT DE REFERENCIA
+local dragging = false
+local dragStart = nil
+local startPos = nil
+
+SquareButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = SquareButton.Position
+    end
+end)
+
+SquareButton.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+        local delta = input.Position - dragStart
+        SquareButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        
+        -- Mover el panel junto con el botón (IGUAL QUE EL OTRO SCRIPT)
+        if isPanelOpen then
+            MainPanel.Position = UDim2.new(0, SquareButton.Position.X.Offset + 60, 0, SquareButton.Position.Y.Offset)
+        end
+    end
+end)
+
+-- Función para buscar jugador en lista
+local function FindPlayerInTable(tbl, player)
+    if not player then return nil end
+    for i = 1, #tbl do
+        if tbl[i] == player then return i end
+    end
+    return nil
+end
+
+-- Función para actualizar la interfaz
+local function UpdatePlayerList()
+    local allPlayers = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        allPlayers[p.UserId] = p
+    end
+    
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            local uid = p.UserId
+            local playerFrame = PlayerList:FindFirstChild("PlayerFrame_" .. uid)
+            
+            if not playerFrame then
+                -- Crear nuevo frame para el jugador
+                local F = Instance.new("Frame")
+                F.Name = "PlayerFrame_" .. uid
+                F.Size = UDim2.new(1, 0, 0, 65)
+                F.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+                F.BackgroundTransparency = 0.3
+                F.BorderSizePixel = 0
+                F.Parent = PlayerList
+
+                -- Borde
+                local FrameBorder = Instance.new("UIStroke")
+                FrameBorder.Thickness = 2
+                FrameBorder.Color = Color3.fromRGB(0, 150, 255)
+                FrameBorder.Parent = F
+
+                local H = Instance.new("ImageLabel")
+                H.Size = UDim2.new(0, 45, 0, 45)
+                H.Position = UDim2.new(0, 5, 0.5, -22.5)
+                H.BackgroundTransparency = 1
+                H.Parent = F
+
+                -- Username arriba
+                local UsernameLabel = Instance.new("TextLabel")
+                UsernameLabel.Name = "Username"
+                UsernameLabel.Size = UDim2.new(1, -100, 0.45, -2)
+                UsernameLabel.Position = UDim2.new(0, 55, 0, 5)
+                UsernameLabel.TextColor3 = Color3.fromRGB(0, 150, 255)
+                UsernameLabel.BackgroundTransparency = 1
+                UsernameLabel.TextXAlignment = Enum.TextXAlignment.Left
+                UsernameLabel.Font = Enum.Font.GothamBold
+                UsernameLabel.TextSize = 14
+                UsernameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+                UsernameLabel.Text = "@" .. p.Name
+                UsernameLabel.Parent = F
+                
+                -- Display Name abajo
+                local DisplayLabel = Instance.new("TextLabel")
+                DisplayLabel.Name = "DisplayName"
+                DisplayLabel.Size = UDim2.new(1, -100, 0.45, -2)
+                DisplayLabel.Position = UDim2.new(0, 55, 0.45, 0)
+                DisplayLabel.TextColor3 = Color3.fromRGB(150, 180, 255)
+                DisplayLabel.BackgroundTransparency = 1
+                DisplayLabel.TextXAlignment = Enum.TextXAlignment.Left
+                DisplayLabel.Font = Enum.Font.Gotham
+                DisplayLabel.TextSize = 12
+                DisplayLabel.Text = p.DisplayName
+                DisplayLabel.TextTruncate = Enum.TextTruncate.AtEnd
+                DisplayLabel.Parent = F
+
+                -- Botón de selección (inicialmente oscuro)
+                local SelectButton = Instance.new("TextButton")
+                SelectButton.Name = "SelectButton"
+                SelectButton.Size = UDim2.new(0, 35, 0, 35)
+                SelectButton.Position = UDim2.new(1, -45, 0.5, -17.5)
+                SelectButton.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+                SelectButton.BorderSizePixel = 0
+                SelectButton.Text = "+"
+                SelectButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+                SelectButton.Font = Enum.Font.GothamBold
+                SelectButton.TextSize = 16
+                SelectButton.Parent = F
+
+                local B = Instance.new("TextButton")
+                B.Size = UDim2.new(1, -45, 1, 0)
+                B.BackgroundTransparency = 1
+                B.Text = ""
+                B.Parent = F
+
+                 -- Configurar evento de clic
+                local capturedPlayer = p
+                B.MouseButton1Click:Connect(function()
+                    local isSelected = FindPlayerInTable(SelectedPlayers, capturedPlayer)
+                    
+                    if isSelected then
+                        -- Deseleccionar
+                        table.remove(SelectedPlayers, isSelected)
+                        F.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+                        SelectButton.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+                        SelectButton.Text = "+"
+                        
+                        StarterGui:SetCore("SendNotification", {
+                            Title = "Deseleccionado",
+                            Text = capturedPlayer.Name,
+                            Duration = 1,
+                            Icon = "rbxassetid://4456176229"
+                        })
+                    else
+                        -- Verificar límite
+                        if #SelectedPlayers >= MaxPlayers then
+                            StarterGui:SetCore("SendNotification", {
+                                Title = "Límite alcanzado",
+                                Text = "Máximo " .. MaxPlayers .. " jugadores",
+                                Duration = 2,
+                                Icon = "rbxassetid://4456176229"
+                            })
+                            return
+                        end
+                        
+                        -- Seleccionar
+                        table.insert(SelectedPlayers, capturedPlayer)
+                        F.BackgroundColor3 = Color3.fromRGB(40, 60, 80)
+                        SelectButton.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+                        SelectButton.Text = "✓"
+                        
+                        StarterGui:SetCore("SendNotification", {
+                            Title = "Seleccionado",
+                            Text = capturedPlayer.Name,
+                            Duration = 1,
+                            Icon = "rbxassetid://4456176229"
+                        })
+                    end
+                    
+                    TargetCount.Text = "Objetivos: " .. #SelectedPlayers .. "/" .. MaxPlayers
+                end)
+            end
+            
+            -- Actualizar imagen y estado
+            local frame = PlayerList:FindFirstChild("PlayerFrame_" .. uid)
+            if frame then
+                -- Actualizar imagen
+                local headshot = frame:FindFirstChildOfClass("ImageLabel")
+                if headshot then
+                    headshot.Image = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. uid .. "&width=420&height=420&format=png"
+                end
+                
+                -- Actualizar labels
+                local usernameLabel = frame:FindFirstChild("Username")
+                local displayLabel = frame:FindFirstChild("DisplayName")
+                if usernameLabel then
+                    usernameLabel.Text = "@" .. p.Name
+                end
+                if displayLabel then
+                    displayLabel.Text = p.DisplayName
+                end
+                
+                -- Actualizar estado de selección
+                local isSelected = FindPlayerInTable(SelectedPlayers, p)
+                local selectButton = frame:FindFirstChild("SelectButton")
+                
+                if isSelected then
+                    frame.BackgroundColor3 = Color3.fromRGB(40, 60, 80)
+                    if selectButton then
+                        selectButton.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+                        selectButton.Text = "✓"
+                    end
+                else
+                    frame.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+                    if selectButton then
+                        selectButton.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+                        selectButton.Text = "+"
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Eliminar jugadores que ya no están
+    for _, child in ipairs(PlayerList:GetChildren()) do
+        if child:IsA("Frame") and child.Name:sub(1, 12) == "PlayerFrame_" then
+            local uid = tonumber(child.Name:sub(13))
+            if not allPlayers[uid] then
+                -- Remover de la lista de seleccionados
+                for i = #SelectedPlayers, 1, -1 do
+                    if SelectedPlayers[i] and SelectedPlayers[i].UserId == uid then
+                        table.remove(SelectedPlayers, i)
+                    end
+                end
+                child:Destroy()
+            end
+        end
+    end
+    
+     -- Actualizar contador
+    TargetCount.Text = "Objetivos: " .. #SelectedPlayers .. "/" .. MaxPlayers
+    if PlayerList then
+        PlayerList.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y)
+    end
+end
+
+-- Botón ALL (seleccionar todos)
+AllButton.MouseButton1Click:Connect(function()
+    SelectedPlayers = {}
+    
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and #SelectedPlayers < MaxPlayers then
+            table.insert(SelectedPlayers, p)
+        end
+    end
+    
+    UpdatePlayerList()
+    
+    StarterGui:SetCore("SendNotification", {
+        Title = "Todos seleccionados",
+        Text = "Objetivos: " .. #SelectedPlayers,
+        Duration = 2,
+        Icon = "rbxassetid://4456176229"
+    })
+end)
+
+-- Botón LIMPIAR
+ClearButton.MouseButton1Click:Connect(function()
+    SelectedPlayers = {}
+    UpdatePlayerList()
+    
+    StarterGui:SetCore("SendNotification", {
+        Title = "Objetivos limpiados",
+        Text = "Selección reiniciada",
+        Duration = 2,
+        Icon = "rbxassetid://4456176229"
+    })
+end)
+
+-- Función principal del loop de ataque
+local function AttackLoop()
+    while AttackRunning and #SelectedPlayers > 0 do
+        for i, targetPlayer in ipairs(SelectedPlayers) do
+            if not AttackRunning then break end
+            
+            -- Verificar que el jugador aún existe
+            if targetPlayer and targetPlayer.Parent and targetPlayer.Character then
+                StatusLabel.Text = "Atacando: " .. targetPlayer.Name
+                StatusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+                
+                -- Realizar el ataque
+                local success = pcall(function()
+                    attackTarget(targetPlayer)
+                end)
+                
+                if success then
+                    StatusLabel.Text = "Atacado: " .. targetPlayer.Name
+                    StatusLabel.TextColor3 = Color3.fromRGB(50, 255, 50)
+                    
+                    if isLooping then
+                        -- Verificar si el jugador murió
+                        if targetPlayer.Character and targetPlayer.Character:FindFirstChild("Humanoid") then
+                            local humanoid = targetPlayer.Character.Humanoid
+                            if humanoid.Health <= 0 then
+                                StarterGui:SetCore("SendNotification", {
+                                    Title = "ELIMINADO",
+                                    Text = targetPlayer.Name .. " ha sido derrotado",
+                                    Duration = 2,
+                                    Icon = "rbxassetid://4456176229"
+                                })
+                            end
+                        end
+                    end
+                else
+                    StatusLabel.Text = "Error con: " .. targetPlayer.Name
+                    StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+                end
+                
+                -- Pequeña pausa entre jugadores
+                if AttackRunning and i < #SelectedPlayers then
+                    task.wait(0.5)
+                end
+            else
+                -- Remover jugador si ya no está disponible
+                table.remove(SelectedPlayers, i)
+                UpdatePlayerList()
+            end
+        end
+        
+        if AttackRunning and #SelectedPlayers > 0 then
+            if isLooping then
+                StatusLabel.Text = "Ciclo completado. Repitiendo..."
+                StatusLabel.TextColor3 = Color3.fromRGB(0, 150, 255)
+                task.wait(1)
+            else
+                break
+            end
+        end
+    end
+    
+    if not AttackRunning then
+        StatusLabel.Text = "Estado: Detenido"
+        StatusLabel.TextColor3 = Color3.fromRGB(0, 150, 255)
+    else
+        AttackRunning = false
+        StatusLabel.Text = "Estado: Completo"
+        StatusLabel.TextColor3 = Color3.fromRGB(50, 255, 50)
+    end
+end
+
+-- Botón de Loop
+LoopButton.MouseButton1Click:Connect(function()
+    isLooping = not isLooping
+    if isLooping then
+        LoopButton.Text = "LOOP: ON"
+        LoopButton.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+    else
+        LoopButton.Text = "LOOP: OFF"
+        LoopButton.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+    end
+end)
+
+-- Botón INICIAR
+StartButton.MouseButton1Click:Connect(function()
+    if #SelectedPlayers == 0 then
+        StarterGui:SetCore("SendNotification", {
+            Title = "Error",
+            Text = "Selecciona al menos un jugador",
+            Duration = 2,
+            Icon = "rbxassetid://4456176229"
+        })
+        return
+    end
+    
+    if not AttackRunning then
+        AttackRunning = true
+        StatusLabel.Text = "Atacando..."
+        StatusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+        StartButton.BackgroundColor3 = Color3.fromRGB(0, 100, 200)
+        StopButton.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+        
+        -- Iniciar el loop de ataque en un hilo separado
+        AttackThread = coroutine.create(AttackLoop)
+        coroutine.resume(AttackThread)
+        
+        StarterGui:SetCore("SendNotification", {
+            Title = "Ataque iniciado",
+            Text = "Objetivos: " .. #SelectedPlayers,
+            Duration = 2,
+            Icon = "rbxassetid://4456176229"
+        })
+    end
+end)
+
+-- Botón PARAR
+StopButton.MouseButton1Click:Connect(function()
+    if AttackRunning then
+        AttackRunning = false
+        StatusLabel.Text = "Ataque detenido"
+        StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+        StartButton.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+        StopButton.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+        
+        StarterGui:SetCore("SendNotification", {
+            Title = "Ataque detenido",
+            Text = "Sistema pausado",
+            Duration = 2,
+            Icon = "rbxassetid://4456176229"
+        })
+    end
+end)
+
+-- Actualizar lista periódicamente
+Players.PlayerAdded:Connect(function()
+    if isPanelOpen then
+        UpdatePlayerList()
+    end
+end)
+
+Players.PlayerRemoving:Connect(function()
+    if isPanelOpen then
+        UpdatePlayerList()
+    end
+end)
+
+-- Loop para mantener actualizada la lista
+spawn(function()
+    while true do
+        task.wait(3)
+        if isPanelOpen then
+            UpdatePlayerList()
+        end
+    end
+end)
+
+-- Asegurar visibilidad en móviles
+if UserInputService.TouchEnabled then
+    SquareButton.Size = UDim2.new(0, 60, 0, 60)
+    SquareButton.TextSize = 28
+    MainPanel.Size = UDim2.new(0, 380, 0, 560)
+end
+
+-- Iniciar la GUI
+UpdatePlayerList()
+
+-- Animación de entrada
+SquareButton.Position = UDim2.new(0, 20, 0, -50)
+TweenService:Create(SquareButton, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), 
+    {Position = UDim2.new(0, 20, 0, 20)}):Play()

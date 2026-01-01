@@ -30,7 +30,7 @@ local function attackTarget(targetPlayer)
                     damageRemote:FireServer(Target)
                     tool.Parent = LocalPlayer.Backpack
 
-                    task.wait(math.random(40, 00) / 100)
+                    task.wait(math.random(40, 20) / 100)
                     isCooldown = false
                 end
                 task.wait()
